@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubernetes-hello-world-python-flask
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: kubernetes-python-flask.local
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: kubernetes-hello-world-python-flask
+            port:
+              number: 80

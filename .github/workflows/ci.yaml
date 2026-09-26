@@ -1,0 +1,108 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Check Python syntax
+        run: python -m compileall -q app.py
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint helm/kubernetes-hello-world-python-flask-chart
+
+      - name: Render Helm chart
+        run: helm template kubernetes-hello-world-python-flask helm/kubernetes-hello-world-python-flask-chart
+
+  build:
+    needs: code-quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --tag kubernetes-hello-world-python-flask:ci .
+
+  push:
+    needs: [code-quality, build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/kubernetes-hello-world-python-flask:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/kubernetes-hello-world-python-flask:${{ github.sha }}
+
+  update-helm-chart:
+    needs: push
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Helm image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path('helm/kubernetes-hello-world-python-flask-chart/values.yaml')
+          text = path.read_text()
+          old = '  tag: "latest"'
+          new = f'  tag: "{os.environ["IMAGE_TAG"]}"'
+          if old not in text:
+              raise SystemExit('tag line not found')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Commit Helm tag update
+        run: |
+          git config user.name "lakshmikatari02@gmail.com"
+          git config user.email "Sri Lakshmi Katari"
+          git add helm/kubernetes-hello-world-python-flask-chart/values.yaml
+          if git diff --cached --quiet; then
+            echo "No chart change to commit"
+          else
+            git commit -m "Update Helm image tag to ${{ github.sha }}"
+            git push
+          fi
