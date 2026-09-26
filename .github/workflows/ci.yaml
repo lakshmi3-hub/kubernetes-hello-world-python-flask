@@ -85,14 +85,24 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import re
           from pathlib import Path
-          path = Path('helm/kubernetes-hello-world-python-flask-chart/values.yaml')
+
+          path = Path("helm/kubernetes-hello-world-python-flask-chart/values.yaml")
           text = path.read_text()
-          old = '  tag: "latest"'
-          new = f'  tag: "{os.environ["IMAGE_TAG"]}"'
-          if old not in text:
-              raise SystemExit('tag line not found')
-          path.write_text(text.replace(old, new))
+          image_tag = os.environ["IMAGE_TAG"]
+
+          updated, count = re.subn(
+              r'(?m)^(\s*tag:\s*)(["\']?)[^"\']*(\2)\s*$',
+              rf'\g<1>"{image_tag}"',
+              text,
+              count=1,
+          )
+
+          if count != 1:
+              raise SystemExit("Could not find image tag in values.yaml")
+
+          path.write_text(updated)
           PY
 
       - name: Commit Helm tag update
