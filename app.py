@@ -29,7 +29,7 @@ def change(amount):
 def hello():
     """Return a friendly HTTP greeting."""
     print("I am inside hello world")
-    return "Here you go, welcome to the world of Devops!"
+    return "Here you go, welcome to the world of Latest Devops Page!"
 
 @app.route('/change/<dollar>/<cents>')
 def changeroute(dollar, cents):
